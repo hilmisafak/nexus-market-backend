@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexusmarket-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexusmarket
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus -d nexusmarket"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    container_name: nexusmarket-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexusmarket-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://nexus:nexus@postgres:5432/nexusmarket
+      MONGO_URI: mongodb://mongo:27017/nexusmarket
+      JWT_SECRET: replace-with-a-strong-secret
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_SECRET: replace-with-another-strong-secret
+      REFRESH_TOKEN_EXPIRES_IN: 30d
+      REFRESH_TOKEN_COOKIE_NAME: nm_refresh_token
+      PAYMENT_WEBHOOK_SECRET: replace-with-a-webhook-signing-secret
+      PAYMENT_WEBHOOK_TOLERANCE_SEC: 300
+      DEFAULT_TAX_RATE_PERCENT: 20
+      DEFAULT_SHIPPING_FEE: 39.9
+      AUDIT_LOG_SIGNING_SECRET: replace-with-a-strong-audit-signing-secret
+      CORS_ORIGIN: ""
+      JSON_BODY_LIMIT: 100kb
+    command: sh -c "npx prisma migrate deploy && node dist/server.js"
+
+volumes:
+  postgres_data:
+  mongo_data:

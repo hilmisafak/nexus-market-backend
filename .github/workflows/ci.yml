@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main", "master"]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-audit:
+    name: Build, Test, Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: nexus
+          POSTGRES_PASSWORD: nexus
+          POSTGRES_DB: nexusmarket
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexus -d nexusmarket"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval \"db.adminCommand('ping').ok\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      PORT: 5000
+      DATABASE_URL: postgresql://nexus:nexus@localhost:5432/nexusmarket
+      MONGO_URI: mongodb://localhost:27017/nexusmarket
+      JWT_SECRET: ci-secret-key-minimum-16-characters
+      JWT_EXPIRES_IN: 15m
+      REFRESH_TOKEN_SECRET: ci-refresh-secret-minimum-16
+      REFRESH_TOKEN_EXPIRES_IN: 30d
+      REFRESH_TOKEN_COOKIE_NAME: nm_refresh_token
+      PAYMENT_WEBHOOK_SECRET: ci-payment-webhook-secret-16
+      PAYMENT_WEBHOOK_TOLERANCE_SEC: 300
+      DEFAULT_TAX_RATE_PERCENT: 20
+      DEFAULT_SHIPPING_FEE: 39.9
+      AUDIT_LOG_SIGNING_SECRET: ci-audit-signing-secret-16
+      CORS_ORIGIN: ""
+      JSON_BODY_LIMIT: 100kb
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Prisma client
+        run: npm run prisma:generate
+
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify Docker build
+        run: docker build -t nexusmarket-backend:ci .
+
+      - name: Dependency security gate (high/critical)
+        run: npm audit --audit-level=high
