@@ -3,11 +3,14 @@ import cookieParser from "cookie-parser";
 import express from "express";
 import type { Request } from "express";
 import helmet from "helmet";
+import { mountSwagger } from "./docs/swagger.js";
 import apiRouter from "./routes/index.js";
 import { env } from "./lib/env.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 
 const app = express();
+
+const helmetMiddleware = helmet();
 
 const resolveCorsOrigin = (): boolean | string | string[] => {
   if (env.NODE_ENV === "development" || env.NODE_ENV === "test") {
@@ -22,7 +25,13 @@ const resolveCorsOrigin = (): boolean | string | string[] => {
   return origins.length === 1 ? origins[0]! : origins;
 };
 
-app.use(helmet());
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/docs")) {
+    next();
+    return;
+  }
+  helmetMiddleware(req, res, next);
+});
 app.use(
   cors({
     origin: resolveCorsOrigin(),
@@ -42,6 +51,7 @@ app.use(
     },
   }),
 );
+mountSwagger(app);
 app.use("/api", apiRouter);
 app.use(errorHandler);
 
