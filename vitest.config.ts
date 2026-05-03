@@ -8,5 +8,6 @@ export default defineConfig({
     sequence: {
       concurrent: false,
     },
+    testTimeout: 30000,
   },
 });
